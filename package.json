@@ -1,0 +1,18 @@
+{
+  "name": "ootb-touchscreen",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Escape room kiosk (sign-in, sign-up, high scores) with staff backend",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "create-admin": "node server/create-admin.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}
