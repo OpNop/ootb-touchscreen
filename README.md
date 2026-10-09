@@ -30,6 +30,8 @@ Configured per person in **Staff & alerts**, plus optional shared channels in **
 2. **Shared channel:** one Slack/Discord webhook URL and/or one shared ntfy topic in Settings — the whole team just joins the channel.
 3. **SMS via Twilio:** fill `TWILIO_*` in `.env`, then tick "Text message" and enter a mobile number per person (costs per message).
 
+4. **Browser notifications (admin page):** click **🔕 Alerts off** in the admin header and allow notifications. While the admin page is open (even in a background tab) a pop-up and beep fire on each sign-up/check-in, and the schedule refreshes itself. It's a per-browser setting and needs HTTPS or `localhost`; it does not work once the tab is closed (use ntfy/SMS for that).
+
 Delivery results (and failures) are listed under **Alert log**. Notifications never delay or break a booking.
 
 ## ERCC high scores — to finish

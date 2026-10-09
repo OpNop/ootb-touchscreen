@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { db, getSettings } from './db.js';
 
 /*
@@ -48,8 +49,13 @@ async function attempt(title, message, channel, recipient, fn) {
   }
 }
 
+/** Live feed for staff browsers that have the admin page open (see GET /api/admin/events). */
+export const alerts = new EventEmitter();
+let alertSeq = 0;
+
 /** Fire-and-forget: never throws and never delays the kiosk response. */
 export function notifyStaff(title, message) {
+  alerts.emit('alert', { id: ++alertSeq, title, message, at: Date.now() });
   deliver(title, message).catch((e) => console.error('[notify]', e));
 }
 

@@ -6,7 +6,7 @@ import {
 import {
   endSession, hashPassword, newTopic, rateLimit, requireAdmin, requireAuth, startSession, verifyPassword,
 } from '../auth.js';
-import { deliver, twilioConfigured, notifyStaff } from '../notify.js';
+import { alerts, deliver, twilioConfigured, notifyStaff } from '../notify.js';
 import { erccConfigured } from '../ercc.js';
 
 const r = Router();
@@ -56,6 +56,17 @@ r.get('/rooms', (_req, res) => {
     difficulties: db.prepare('SELECT * FROM difficulties WHERE room_id = ? ORDER BY id').all(room.id),
   }));
   res.json(rooms);
+});
+
+// Server-Sent Events: pushes kiosk sign-up/check-in alerts to open admin pages for browser notifications.
+r.get('/events', (req, res) => {
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders();
+  res.write('retry: 5000\n\n');
+  const send = (a) => res.write(`data: ${JSON.stringify(a)}\n\n`);
+  alerts.on('alert', send);
+  const beat = setInterval(() => res.write(': ping\n\n'), 25_000);
+  req.on('close', () => { clearInterval(beat); alerts.off('alert', send); });
 });
 
 // ---- admin-only below ----

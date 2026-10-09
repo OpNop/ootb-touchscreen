@@ -27,8 +27,62 @@ async function attempt(errEl, fn) {
   try { return await fn(); } catch (e) { errEl.textContent = e.message; if (e.status === 401) start(); }
 }
 
+// ---------- browser notifications ----------
+// Per-browser opt-in (permission must be granted from a click). Works while the admin page is open, including background tabs.
+// Browsers only allow notifications on HTTPS or localhost.
+let events = null;
+const alertsOn = () => { try { return localStorage.getItem('browserAlerts') === '1'; } catch { return false; } };
+const setAlertsPref = (on) => { try { localStorage.setItem('browserAlerts', on ? '1' : '0'); } catch { /* ignore */ } };
+const alertsActive = () => 'Notification' in window && Notification.permission === 'granted' && alertsOn();
+
+async function toggleAlerts() {
+  if (alertsActive()) { setAlertsPref(false); renderShell(); return; }
+  if (!('Notification' in window) || !window.isSecureContext) {
+    alert('Browser notifications need HTTPS (or localhost). Open the admin over https:// to enable them.');
+    return;
+  }
+  const perm = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+  if (perm !== 'granted') {
+    alert('Notifications are blocked for this site. Allow them from the lock icon in the address bar, then try again.');
+    return;
+  }
+  setAlertsPref(true);
+  new Notification('Alerts enabled', { body: 'You will be notified of kiosk sign-ups and check-ins while this page is open.' });
+  renderShell();
+}
+
+function beep() {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    osc.frequency.value = 880;
+    osc.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch { /* audio blocked until first interaction */ }
+}
+
+function onAlert(a) {
+  if (alertsActive()) {
+    const n = new Notification(a.title, { body: a.message, tag: `ootb-${a.id}` });
+    n.onclick = () => { window.focus(); tab = 'schedule'; renderShell(); n.close(); };
+    beep();
+  }
+  // keep the schedule current when a guest signs up or checks in
+  if (tab === 'schedule' && !document.querySelector('dialog[open]')) renderShell();
+}
+
+function connectEvents() {
+  if (events) return;
+  events = new EventSource('/api/admin/events');
+  events.onmessage = (e) => { try { onAlert(JSON.parse(e.data)); } catch { /* ignore malformed */ } };
+  events.onerror = () => { if (events?.readyState === EventSource.CLOSED) events = null; };
+}
+function disconnectEvents() { events?.close(); events = null; }
+
 // ---------- login ----------
 function renderLogin() {
+  disconnectEvents();
   const err = h('div', { class: 'err' });
   const email = h('input', { type: 'email', autocomplete: 'username', required: true });
   const pw = h('input', { type: 'password', autocomplete: 'current-password', required: true });
@@ -47,6 +101,7 @@ function renderShell() {
     h('button', { class: tab === id ? 'on' : '', onclick: () => { tab = id; renderShell(); } }, label)));
   root.replaceChildren(
     h('header', { class: 'bar' }, h('span', { class: 'title' }, 'Staff Admin'), nav, h('span', { class: 'sp' }),
+      h('button', { class: 'btn sm' + (alertsActive() ? ' primary' : ''), title: 'Browser notifications for kiosk sign-ups and check-ins', onclick: toggleAlerts }, alertsActive() ? '🔔 Alerts on' : '🔕 Alerts off'),
       h('span', { class: 'muted' }, me.name), h('button', { class: 'btn sm', onclick: async () => { await api('/api/admin/logout', { method: 'POST' }); start(); } }, 'Sign out')),
     main);
   ({ schedule: renderSchedule, rooms: renderRooms, staff: renderStaff, settings: renderSettings, activity: renderActivity })[tab](main);
@@ -367,6 +422,7 @@ async function start() {
   try {
     me = await api('/api/admin/me');
     if (me.role !== 'admin' && tab !== 'schedule') tab = 'schedule';
+    connectEvents();
     renderShell();
   } catch { renderLogin(); }
 }
