@@ -42,7 +42,31 @@ dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--c
 dialog::backdrop { background: rgba(0,0,0,.45); }
 .login { max-width: 360px; margin: 12vh auto; }
 .dayhead { margin: 20px 0 6px; font-weight: 700; }
-.stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.stats { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0 14px; }
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 16px; }
 .stat b { display: block; font-size: 1.5rem; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { font: inherit; border: 0; background: var(--card); color: var(--muted); padding: 7px 14px; cursor: pointer; }
+.seg button.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.cal-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.cal { display: grid; min-width: 100%; }
+.cal-head { padding: 8px 10px; font-weight: 600; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); background: var(--card); }
+.cal-head.link { cursor: pointer; }
+.cal-head.link:hover { color: var(--accent); }
+.cal-gutter { position: relative; }
+.cal-gutter span { position: absolute; right: 6px; transform: translateY(-50%); font-size: .72rem; color: var(--muted); background: var(--card); padding: 0 2px; }
+.cal-gutter span:first-child { transform: none; }
+.cal-col { position: relative; border-left: 1px solid var(--line); cursor: copy;
+  background-image: repeating-linear-gradient(to bottom, var(--line) 0, var(--line) 1px, transparent 1px, transparent 72px); }
+.cal-col:hover { background-color: rgba(127,127,127,.05); }
+.ev { position: absolute; padding: 3px 6px; border-radius: 6px; overflow: hidden; cursor: pointer; font-size: .78rem; line-height: 1.25;
+  background: color-mix(in srgb, var(--c) 18%, var(--card)); border-left: 4px solid var(--c); border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.ev:hover { box-shadow: 0 2px 8px rgba(0,0,0,.25); z-index: 2; }
+.ev b, .ev span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev span { color: var(--muted); }
+.ev.checked_in { background: color-mix(in srgb, var(--good) 22%, var(--card)); }
+.ev.completed { opacity: .6; }
+.ev.cancelled, .ev.no_show { opacity: .4; text-decoration: line-through; }
+.now { position: absolute; left: 0; right: 0; height: 2px; background: var(--bad); z-index: 2; pointer-events: none; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
 code { background: var(--line); padding: 1px 6px; border-radius: 5px; }

@@ -3,7 +3,8 @@ import { h, api, fmtTime, fmtDate, addDays } from '/shared/ui.js';
 const root = document.getElementById('root');
 let me = null;
 let tab = 'schedule';
-const sched = { date: null, range: 'day' };
+const sched = { date: null, range: 'day', view: 'calendar' };
+try { sched.view = localStorage.getItem('schedView') || 'calendar'; } catch { /* storage unavailable */ }
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 // ---------- helpers ----------
@@ -65,7 +66,11 @@ async function renderSchedule(main) {
         dateInput,
         h('button', { class: 'btn', onclick: () => { sched.date = addDays(sched.date, sched.range === 'week' ? 7 : 1); renderShell(); } }, '▶'),
         h('button', { class: 'btn', onclick: () => { sched.date = me.today; renderShell(); } }, 'Today'),
-        h('select', { onchange: (e) => { sched.range = e.target.value; renderShell(); } }, h('option', { value: 'day', selected: sched.range === 'day' }, 'Day'), h('option', { value: 'week', selected: sched.range === 'week' }, '7 days'))),
+        h('select', { onchange: (e) => { sched.range = e.target.value; renderShell(); } }, h('option', { value: 'day', selected: sched.range === 'day' }, 'Day'), h('option', { value: 'week', selected: sched.range === 'week' }, '7 days')),
+        h('span', { class: 'seg' }, [['calendar', 'Calendar'], ['list', 'List']].map(([v, label]) => h('button', {
+          class: sched.view === v ? 'on' : '',
+          onclick: () => { sched.view = v; try { localStorage.setItem('schedView', v); } catch { /* ignore */ } renderShell(); },
+        }, label)))),
       h('button', { class: 'btn primary', onclick: () => bookingForm(null) }, '+ New booking')),
     list);
   try {
@@ -77,10 +82,91 @@ async function renderSchedule(main) {
       h('div', { class: 'stat' }, h('b', {}, rows.filter((b) => b.status === 'checked_in').length), 'checked in'));
     const byDate = Map.groupBy(rows, (b) => b.date);
     const days = sched.range === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(from, i)) : [from];
+    if (sched.view === 'calendar') {
+      list.replaceChildren(stats, calendar(rows, await api('/api/admin/rooms'), days));
+      return;
+    }
     list.replaceChildren(stats, ...days.map((d) => h('div', {},
       h('div', { class: 'dayhead' }, fmtDate(d, { weekday: 'long', month: 'long', day: 'numeric' }), d === me.today ? ' (today)' : ''),
       byDate.get(d) ? bookingTable(byDate.get(d)) : h('div', { class: 'muted' }, 'No bookings'))));
   } catch (e) { list.textContent = e.message; if (e.status === 401) start(); }
+}
+
+// ---------- calendar view ----------
+const PPM = 1.2; // pixels per minute
+const ROOM_COLORS = ['#c9740a', '#2f7fd1', '#2b9b6a', '#9a4fc4', '#c9456a', '#5b6bd6'];
+const toMinutes = (t) => { const [a, b] = t.split(':').map(Number); return a * 60 + b; };
+const fromMinutes = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/** Side-by-side lanes for overlapping events (e.g. two rooms at the same time in week view). */
+function assignLanes(items) {
+  const out = [];
+  let cluster = [];
+  let laneEnds = [];
+  let end = 0;
+  const flush = () => { cluster.forEach((c) => { c.lanes = laneEnds.length; }); out.push(...cluster); cluster = []; laneEnds = []; end = 0; };
+  for (const it of [...items].sort((a, b) => a.s - b.s || a.e - b.e)) {
+    if (cluster.length && it.s >= end) flush();
+    let lane = laneEnds.findIndex((le) => le <= it.s);
+    if (lane < 0) lane = laneEnds.length;
+    laneEnds[lane] = it.e;
+    it.lane = lane;
+    cluster.push(it);
+    end = Math.max(end, it.e);
+  }
+  flush();
+  return out;
+}
+
+function calendar(rows, rooms, days) {
+  const week = days.length > 1;
+  const cols = week
+    ? days.map((d) => ({ date: d, label: fmtDate(d, { weekday: 'short', month: 'short', day: 'numeric' }), roomId: null, pick: (b) => b.date === d, goto: d }))
+    : rooms.filter((r) => r.active || rows.some((b) => b.room_id === r.id)).map((r) => ({ date: days[0], label: r.name, roomId: r.id, pick: (b) => b.room_id === r.id }));
+
+  // visible time range: all opening hours for the days shown, widened to include any booking
+  let lo = Infinity;
+  let hi = 0;
+  for (const r of rooms) for (const d of days) {
+    const hrs = r.hours[new Date(d + 'T00:00:00').getDay()];
+    if (hrs) { lo = Math.min(lo, toMinutes(hrs[0])); hi = Math.max(hi, toMinutes(hrs[1])); }
+  }
+  for (const b of rows) { lo = Math.min(lo, toMinutes(b.start)); hi = Math.max(hi, toMinutes(b.end)); }
+  if (!Number.isFinite(lo)) { lo = 10 * 60; hi = 22 * 60; }
+  lo = Math.floor(lo / 60) * 60;
+  hi = Math.ceil(hi / 60) * 60;
+  const height = (hi - lo) * PPM;
+  const hours = Array.from({ length: (hi - lo) / 60 }, (_, i) => lo + i * 60);
+  const roomColor = (id) => ROOM_COLORS[Math.max(0, rooms.findIndex((r) => r.id === id)) % ROOM_COLORS.length];
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+
+  const head = (c) => h('div', { class: 'cal-head' + (c.goto ? ' link' : ''), onclick: c.goto ? () => { sched.date = c.goto; sched.range = 'day'; renderShell(); } : null },
+    c.label, c.date === me.today && week ? h('span', { class: 'muted' }, ' · today') : '');
+  const body = (c) => {
+    const evs = assignLanes(rows.filter(c.pick).map((b) => ({ b, s: toMinutes(b.start), e: toMinutes(b.end) })));
+    return h('div', {
+      class: 'cal-col', style: `height:${height}px`,
+      onclick: (e) => {
+        const y = e.clientY - e.currentTarget.getBoundingClientRect().top;
+        bookingForm(null, { date: c.date, start: fromMinutes(lo + Math.floor(y / PPM / 30) * 30), room_id: c.roomId });
+      },
+    },
+    ...evs.map(({ b, s, e, lane, lanes }) => h('div', {
+      class: `ev ${b.status}`, title: `${b.name} · ${b.room_name} (${b.difficulty_name}) · ${b.party_size} players`,
+      style: `top:${(s - lo) * PPM}px;height:${(e - s) * PPM - 2}px;left:${(lane / lanes) * 100}%;width:${100 / lanes}%;--c:${roomColor(b.room_id)}`,
+      onclick: (ev) => { ev.stopPropagation(); bookingForm(b); },
+    }, h('b', {}, `${fmtTime(b.start)} ${b.name}`), h('span', {}, `${week ? b.room_name + ' · ' : ''}${b.difficulty_name} · ${b.party_size}p${b.status === 'checked_in' ? ' ✓' : ''}`))),
+    c.date === me.today && nowMin >= lo && nowMin <= hi ? h('div', { class: 'now', style: `top:${(nowMin - lo) * PPM}px` }) : '');
+  };
+
+  const legend = week ? h('div', { class: 'row muted', style: 'margin-top:8px' }, rooms.map((r) => h('span', {}, h('span', { class: 'dot', style: `background:${roomColor(r.id)}` }), r.name))) : '';
+  return h('div', {},
+    h('div', { class: 'cal-wrap' }, h('div', { class: 'cal', style: `grid-template-columns:52px repeat(${cols.length}, minmax(120px, 1fr))` },
+      h('div', {}), ...cols.map(head),
+      h('div', { class: 'cal-gutter', style: `height:${height}px` }, hours.map((m) => h('span', { style: `top:${(m - lo) * PPM}px` }, fmtTime(fromMinutes(m))))),
+      ...cols.map(body))),
+    legend, h('p', { class: 'muted' }, 'Click an empty time to add a booking, or a booking to edit it.'));
 }
 
 function bookingTable(rows) {
@@ -101,13 +187,14 @@ function bookingTable(rows) {
         b.status === 'scheduled' ? h('button', { class: 'btn sm', onclick: () => setStatus(b, 'no_show') }, 'No-show') : ''))))));
 }
 
-async function bookingForm(b) {
+async function bookingForm(b, prefill = {}) {
   const rooms = (await api('/api/admin/rooms')).filter((r) => r.active);
-  const options = rooms.flatMap((r) => r.difficulties.filter((d) => d.active || (b && d.id === b.difficulty_id)).map((d) => ({ id: d.id, label: `${r.name} — ${d.name} (${d.duration_min} min)`, max: d.max_players, min: d.min_players })));
+  const options = rooms.flatMap((r) => r.difficulties.filter((d) => d.active || (b && d.id === b.difficulty_id)).map((d) => ({ id: d.id, room_id: r.id, label: `${r.name} — ${d.name} (${d.duration_min} min)`, max: d.max_players, min: d.min_players })));
   modal(b ? 'Edit booking' : 'New booking', (close) => {
-    const diff = h('select', {}, options.map((o) => h('option', { value: o.id, selected: b?.difficulty_id === o.id }, o.label)));
-    const date = h('input', { type: 'date', value: b?.date || sched.date || me.today });
-    const start = h('input', { type: 'time', step: 300, value: b?.start || '' });
+    const preselect = b?.difficulty_id ?? options.find((o) => o.room_id === prefill.room_id)?.id;
+    const diff = h('select', {}, options.map((o) => h('option', { value: o.id, selected: preselect === o.id }, o.label)));
+    const date = h('input', { type: 'date', value: b?.date || prefill.date || sched.date || me.today });
+    const start = h('input', { type: 'time', step: 300, value: b?.start || prefill.start || '' });
     const party = num(b?.party_size || 4, { min: 1 });
     const name = h('input', { value: b?.name || '' });
     const phone = h('input', { type: 'tel', value: b?.phone || '' });
