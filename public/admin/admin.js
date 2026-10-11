@@ -285,6 +285,22 @@ async function bookingForm(b, prefill = {}) {
 }
 
 // ---------- rooms ----------
+/** Two-step delete: plain confirm first; if bookings exist the server refuses and we ask again with the booking count. */
+async function confirmDelete(path, what) {
+  if (!confirm(`Delete ${what}? This cannot be undone.`)) return false;
+  try {
+    await api(path, { method: 'DELETE' });
+    return true;
+  } catch (e) {
+    if (e.status !== 409 || !e.data?.bookings) throw e;
+    const { bookings, upcoming } = e.data;
+    const msg = `${what} has ${bookings} booking(s)${upcoming ? `, including ${upcoming} upcoming` : ''}.\n\n`
+      + 'Deleting it will also PERMANENTLY delete those bookings. To keep the history, press Cancel and untick "Active" instead to just hide it from the kiosk.\n\nDelete everything anyway?';
+    if (!confirm(msg)) return false;
+    await api(`${path}?force=1`, { method: 'DELETE' });
+    return true;
+  }
+}
 async function renderRooms(main) {
   const rooms = await api('/api/admin/rooms');
   main.append(h('div', { class: 'row sp' }, h('h2', {}, 'Rooms & difficulties'), h('button', { class: 'btn primary', onclick: () => roomForm(null) }, '+ Add room')),
@@ -328,7 +344,8 @@ function roomForm(r) {
       field('Full description (Markdown)', desc),
       h('div', { class: 'muted' }, 'Formatting: ', h('code', {}, '**bold**'), ' ', h('code', {}, '*italic*'), ' ', h('code', {}, '## Heading'), ' ', h('code', {}, '- bullet list'), ' · blank line = new paragraph'),
       h('h3', {}, 'Preview'), preview, active, h('h3', {}, 'Opening hours'), ...rows.map((x) => x.el), err,
-      h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: save }, 'Save'), h('button', { class: 'btn', onclick: close }, 'Close')));
+      h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: save }, 'Save'), h('button', { class: 'btn', onclick: close }, 'Close'),
+        r ? h('button', { class: 'btn danger', style: 'margin-left:auto', onclick: () => attempt(err, async () => { if (await confirmDelete(`/api/admin/rooms/${r.id}`, `the room "${r.name}" and all its difficulties`)) { close(); renderShell(); } }) }, 'Delete room') : ''));
   });
 }
 
@@ -350,7 +367,8 @@ function diffForm(room, d) {
     return h('div', {}, field('Name (e.g. Standard, Expert)', name),
       h('div', { class: 'cols' }, field('Game length (min)', dur), field('Reset time after (min)', buf), field('Min players', min), field('Max players', max)),
       field('ERCC room match (optional)', ref), active, err,
-      h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: save }, 'Save'), h('button', { class: 'btn', onclick: close }, 'Close')));
+      h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: save }, 'Save'), h('button', { class: 'btn', onclick: close }, 'Close'),
+        d ? h('button', { class: 'btn danger', style: 'margin-left:auto', onclick: () => attempt(err, async () => { if (await confirmDelete(`/api/admin/difficulties/${d.id}`, `the difficulty "${d.name}" (${room.name})`)) { close(); renderShell(); } }) }, 'Delete difficulty') : ''));
   });
 }
 

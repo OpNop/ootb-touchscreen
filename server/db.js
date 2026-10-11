@@ -116,8 +116,11 @@ export function setSetting(k, v) {
 }
 export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS);
 
-// Seed 2 rooms x 2 difficulties on first run (rename/edit them from the admin UI).
-if (db.prepare('SELECT COUNT(*) c FROM rooms').get().c === 0) {
+// Seed 2 rooms x 2 difficulties once, on first run (rename/edit/delete them from the admin UI).
+// The flag stops them coming back if every room is later deleted.
+const needsSeed = !getSetting('seeded') && db.prepare('SELECT COUNT(*) c FROM rooms').get().c === 0;
+setSetting('seeded', '1');
+if (needsSeed) {
   const hours = JSON.stringify(Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [d, ['12:00', '21:00']])));
   const addRoom = db.prepare('INSERT INTO rooms (name, description, hours, sort) VALUES (?, ?, ?, ?)');
   const addDiff = db.prepare('INSERT INTO difficulties (room_id, name, duration_min, buffer_min, min_players, max_players) VALUES (?, ?, 60, 15, 2, 8)');

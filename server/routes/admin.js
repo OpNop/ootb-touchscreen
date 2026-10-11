@@ -121,6 +121,44 @@ r.put('/difficulties/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+/**
+ * Deletes a room/difficulty. Bookings reference both, so without ?force=1 the delete is refused when any exist
+ * (409 with counts) and the UI asks the user to confirm removing them too. Runs in one transaction.
+ */
+function deleteWithBookings(res, column, id, force, doDelete) {
+  const { total, upcoming } = db.prepare(
+    `SELECT COUNT(*) total, COALESCE(SUM(date >= ? AND status IN ('scheduled','checked_in')), 0) upcoming FROM bookings WHERE ${column} = ?`,
+  ).get(localNow().date, id);
+  if (total && !force) {
+    return res.status(409).json({ error: `This has ${total} booking(s) attached.`, bookings: total, upcoming });
+  }
+  db.exec('BEGIN');
+  try {
+    if (total) db.prepare(`DELETE FROM bookings WHERE ${column} = ?`).run(id);
+    doDelete();
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  return res.json({ ok: true, deleted_bookings: total });
+}
+r.delete('/rooms/:id', (req, res) => {
+  const id = +req.params.id;
+  if (!db.prepare('SELECT 1 FROM rooms WHERE id = ?').get(id)) throw new HttpError(404, 'Room not found.');
+  deleteWithBookings(res, 'room_id', id, req.query.force === '1', () => {
+    db.prepare('DELETE FROM difficulties WHERE room_id = ?').run(id);
+    db.prepare('DELETE FROM rooms WHERE id = ?').run(id);
+  });
+});
+r.delete('/difficulties/:id', (req, res) => {
+  const id = +req.params.id;
+  if (!db.prepare('SELECT 1 FROM difficulties WHERE id = ?').get(id)) throw new HttpError(404, 'Difficulty not found.');
+  deleteWithBookings(res, 'difficulty_id', id, req.query.force === '1', () => {
+    db.prepare('DELETE FROM difficulties WHERE id = ?').run(id);
+  });
+});
+
 // ---- staff ----
 r.get('/staff', (_req, res) => {
   res.json(db.prepare('SELECT id, name, email, role, phone, notify_sms, notify_push, ntfy_topic, active FROM staff ORDER BY active DESC, name').all());
