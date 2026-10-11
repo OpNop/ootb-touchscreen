@@ -1,4 +1,5 @@
 import { h, api, fmtTime, fmtDate, addDays } from '/shared/ui.js';
+import { renderMarkdown, plainText } from '/shared/markdown.js';
 
 const root = document.getElementById('root');
 let me = null;
@@ -289,7 +290,7 @@ async function renderRooms(main) {
   main.append(h('div', { class: 'row sp' }, h('h2', {}, 'Rooms & difficulties'), h('button', { class: 'btn primary', onclick: () => roomForm(null) }, '+ Add room')),
     h('p', { class: 'muted' }, 'Each room can be booked once at a time regardless of difficulty. Add as many rooms and difficulty levels as you need.'),
     ...rooms.map((r) => h('div', { class: 'card' },
-      h('div', { class: 'row sp' }, h('div', {}, h('b', {}, r.name), r.active ? '' : h('span', { class: 'badge' }, 'inactive'), h('div', { class: 'muted' }, hoursSummary(r.hours))),
+      h('div', { class: 'row sp' }, h('div', {}, h('b', {}, r.name), r.active ? '' : h('span', { class: 'badge' }, 'inactive'), h('div', { class: 'muted' }, hoursSummary(r.hours)), h('div', { class: 'muted' }, r.short_description || plainText(r.description, 120) || 'No description yet')),
         h('button', { class: 'btn sm', onclick: () => roomForm(r) }, 'Edit room & hours')),
       h('table', {}, h('thead', {}, h('tr', {}, ['Difficulty', 'Length', 'Reset', 'Players', 'ERCC match', ''].map((t) => h('th', {}, t)))),
         h('tbody', {}, r.difficulties.map((d) => h('tr', {}, h('td', {}, d.name, d.active ? '' : h('span', { class: 'badge' }, 'inactive')), h('td', {}, `${d.duration_min} min`), h('td', {}, `${d.buffer_min} min`),
@@ -301,7 +302,13 @@ const hoursSummary = (hours) => DAYS.map((d, i) => (hours[i] ? `${d.slice(0, 3)}
 function roomForm(r) {
   modal(r ? `Edit ${r.name}` : 'Add room', (close) => {
     const name = h('input', { value: r?.name || '' });
-    const desc = h('input', { value: r?.description || '', placeholder: 'Shown on the kiosk' });
+    const shortDesc = h('textarea', { rows: 3, maxlength: 300, placeholder: '1-2 sentences shown on the room card at the kiosk' }, r?.short_description || '');
+    const count = h('span', { class: 'muted' });
+    const desc = h('textarea', { rows: 10, maxlength: 8000, placeholder: 'Full description shown when a guest taps "More info"' }, r?.description || '');
+    const preview = h('div', { class: 'card md-preview' });
+    const refresh = () => { count.textContent = `${shortDesc.value.length}/300`; preview.replaceChildren(renderMarkdown(desc.value || '*Nothing to preview yet*')); };
+    shortDesc.oninput = desc.oninput = refresh;
+    refresh();
     const active = check('Active (bookable)', r ? !!r.active : true);
     const rows = DAYS.map((d, i) => {
       const hrs = r?.hours?.[i] || (r ? null : ['12:00', '21:00']);
@@ -313,11 +320,14 @@ function roomForm(r) {
     const err = h('div', { class: 'err' });
     const save = () => attempt(err, async () => {
       const hours = Object.fromEntries(rows.map((x, i) => [i, x.open.input.checked ? [x.a.value, x.z.value] : null]));
-      const body = { name: name.value, description: desc.value, active: active.input.checked, hours };
+      const body = { name: name.value, short_description: shortDesc.value, description: desc.value, active: active.input.checked, hours };
       await (r ? api(`/api/admin/rooms/${r.id}`, { method: 'PUT', body }) : api('/api/admin/rooms', { method: 'POST', body }));
       close(); renderShell();
     });
-    return h('div', {}, field('Room name', name), field('Description', desc), active, h('h3', {}, 'Opening hours'), ...rows.map((x) => x.el), err,
+    return h('div', {}, field('Room name', name), field('Short description', shortDesc), count,
+      field('Full description (Markdown)', desc),
+      h('div', { class: 'muted' }, 'Formatting: ', h('code', {}, '**bold**'), ' ', h('code', {}, '*italic*'), ' ', h('code', {}, '## Heading'), ' ', h('code', {}, '- bullet list'), ' · blank line = new paragraph'),
+      h('h3', {}, 'Preview'), preview, active, h('h3', {}, 'Opening hours'), ...rows.map((x) => x.el), err,
       h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: save }, 'Save'), h('button', { class: 'btn', onclick: close }, 'Close')));
   });
 }

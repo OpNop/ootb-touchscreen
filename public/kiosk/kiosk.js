@@ -1,4 +1,5 @@
 import { h, api, fmtTime, fmtDate, addDays, fmtSeconds } from '/shared/ui.js';
+import { renderMarkdown, plainText } from '/shared/markdown.js';
 import './keyboard.js';
 
 const app = document.getElementById('app');
@@ -28,6 +29,7 @@ function armIdle() {
 ['pointerdown', 'keydown'].forEach((ev) => addEventListener(ev, () => { if (app.dataset.screen !== 'home') armIdle(); }, true));
 
 function screen(name, ...nodes) {
+  document.querySelector('.modal')?.remove();
   app.dataset.screen = name;
   show(...nodes);
   armIdle();
@@ -134,9 +136,25 @@ function signupStart() {
   stepRoom();
 }
 
+function pickRoom(r) { draft.room = r; stepDifficulty(); }
+
+function roomInfo(r) {
+  const close = () => overlay.remove();
+  const overlay = h('div', { class: 'modal', onclick: (e) => { if (e.target === overlay) close(); } },
+    h('div', { class: 'modal-box', role: 'dialog', 'aria-label': r.name },
+      h('h2', {}, r.name),
+      h('div', { class: 'modal-body' }, renderMarkdown(r.description || r.short_description)),
+      h('div', { class: 'modal-actions' }, h('button', { class: 'ghost', onclick: close }, 'Close'), h('button', { class: 'primary', onclick: () => { close(); pickRoom(r); } }, 'Choose this room'))));
+  document.body.append(overlay);
+}
+
 function stepRoom() {
-  screen('signup', header('Choose your room'), h('div', { class: 'grid' }, cfg.rooms.map((r) => h('button', { class: 'card', onclick: () => { draft.room = r; stepDifficulty(); } },
-    h('strong', {}, r.name), h('span', {}, r.description || `${r.difficulties.length} difficulty levels`)))), nav(back(home, '← Home')));
+  screen('signup', header('Choose your room'), h('div', { class: 'rooms' }, cfg.rooms.map((r) => h('div', { class: 'room-card' },
+    h('h3', {}, r.name),
+    h('p', {}, r.short_description || plainText(r.description, 160) || `${r.difficulties.length} difficulty levels`),
+    h('div', { class: 'room-actions' },
+      r.description && r.description !== r.short_description ? h('button', { class: 'ghost', onclick: () => roomInfo(r) }, 'More info') : '',
+      h('button', { class: 'primary', onclick: () => pickRoom(r) }, 'Choose this room'))))), nav(back(home, '← Home')));
 }
 function stepDifficulty() {
   screen('signup', header(draft.room.name, 'Choose a difficulty'), h('div', { class: 'grid' }, draft.room.difficulties.map((d) => h('button', { class: 'card', onclick: () => { draft.diff = d; draft.party = Math.max(d.min_players, Math.min(4, d.max_players)); stepDate(); } },

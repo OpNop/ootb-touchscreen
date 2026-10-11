@@ -87,6 +87,11 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 `);
 
+// Migration: rooms.description is now the full (Markdown) text; short_description is the kiosk card blurb.
+if (!db.prepare('PRAGMA table_info(rooms)').all().some((c) => c.name === 'short_description')) {
+  db.exec("ALTER TABLE rooms ADD COLUMN short_description TEXT NOT NULL DEFAULT ''");
+}
+
 const DEFAULT_SETTINGS = {
   business_name: 'Escape Room',
   slot_minutes: '30',

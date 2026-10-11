@@ -85,16 +85,16 @@ r.post('/rooms', (req, res) => {
   const b = req.body || {};
   if (!str(b.name)) throw new HttpError(400, 'Room name is required.');
   const sort = db.prepare('SELECT COALESCE(MAX(sort),0)+1 n FROM rooms').get().n;
-  const id = db.prepare('INSERT INTO rooms (name, description, hours, active, sort) VALUES (?,?,?,?,?)').run(
-    str(b.name, 80), str(b.description, 500), cleanHours(b.hours), bool(b.active ?? true), sort,
+  const id = db.prepare('INSERT INTO rooms (name, short_description, description, hours, active, sort) VALUES (?,?,?,?,?,?)').run(
+    str(b.name, 80), str(b.short_description, 300), str(b.description, 8000), cleanHours(b.hours), bool(b.active ?? true), sort,
   ).lastInsertRowid;
   res.status(201).json({ id: Number(id) });
 });
 r.put('/rooms/:id', (req, res) => {
   const b = req.body || {};
   if (!str(b.name)) throw new HttpError(400, 'Room name is required.');
-  db.prepare('UPDATE rooms SET name=?, description=?, hours=?, active=? WHERE id=?').run(
-    str(b.name, 80), str(b.description, 500), cleanHours(b.hours), bool(b.active), +req.params.id,
+  db.prepare('UPDATE rooms SET name=?, short_description=?, description=?, hours=?, active=? WHERE id=?').run(
+    str(b.name, 80), str(b.short_description, 300), str(b.description, 8000), cleanHours(b.hours), bool(b.active), +req.params.id,
   );
   res.json({ ok: true });
 });

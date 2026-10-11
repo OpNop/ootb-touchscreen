@@ -11,7 +11,7 @@ const r = Router();
 
 r.get('/config', (_req, res) => {
   const s = getSettings();
-  const rooms = db.prepare('SELECT id, name, description FROM rooms WHERE active = 1 ORDER BY sort, id').all().map((room) => ({
+  const rooms = db.prepare('SELECT id, name, description, short_description FROM rooms WHERE active = 1 ORDER BY sort, id').all().map((room) => ({
     ...room,
     difficulties: db.prepare(
       'SELECT id, name, duration_min, min_players, max_players FROM difficulties WHERE room_id = ? AND active = 1 ORDER BY id',

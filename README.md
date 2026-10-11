@@ -19,7 +19,7 @@ npm start
 | Kiosk sign-up | Room → difficulty → day → time → players → details (on-screen keyboard) → confirm. Returns a confirmation code. |
 | High scores | `/api/public/scores` proxies the ERCC API (cached 60s, stale fallback). Demo data until configured. |
 | Staff schedule | Calendar (rooms as columns for a day, days as columns for a week) or list view, toggled in the toolbar; click an empty slot to book, click a booking to edit. Create/edit/cancel, check in, complete, no-show. Prevents double-booking per room (any difficulty). |
-| Rooms | Add rooms and difficulties in the UI (length, reset buffer, player limits, per-weekday hours). Seeded with 2 rooms x 2 difficulties. |
+| Rooms | Add rooms and difficulties in the UI (length, reset buffer, player limits, per-weekday hours). Each room has a short description (shown on the kiosk room card) and a full Markdown description (shown in the "More info" pop-up) with a live preview. Markdown supported: `**bold**`, `*italic*`, `## headings`, `- bullets`, `1. numbered`, `---`. Seeded with 2 rooms x 2 difficulties. |
 | Staff & alerts | Add/remove staff (untick Active = logged out + no more alerts). Roles: `admin` (everything) and `staff` (bookings). |
 
 ## Staff notifications (sign-up and check-in)

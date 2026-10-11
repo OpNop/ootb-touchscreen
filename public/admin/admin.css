@@ -69,4 +69,11 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 .ev.cancelled, .ev.no_show { opacity: .4; text-decoration: line-through; }
 .now { position: absolute; left: 0; right: 0; height: 2px; background: var(--bad); z-index: 2; pointer-events: none; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+.md-preview { max-height: 240px; overflow-y: auto; margin-bottom: 12px; }
+.md > :first-child { margin-top: 0; }
+.md h3, .md h4, .md h5 { margin: 1em 0 .3em; }
+.md p { margin: 0 0 .8em; }
+.md ul, .md ol { margin: 0 0 .8em; padding-left: 1.4em; }
+.md hr { border: 0; border-top: 1px solid var(--line); }
+textarea { font-family: inherit; resize: vertical; }
 code { background: var(--line); padding: 1px 6px; border-radius: 5px; }
