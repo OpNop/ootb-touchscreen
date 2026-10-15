@@ -53,25 +53,29 @@ function renderHome() {
 }
 
 // ---------- high scores ----------
-async function scores(roomFilter = '') {
-  const body = h('div', {}, h('p', { class: 'sub' }, 'Loading scores…'));
-  screen('scores', header('🏆 High scores'), body, nav(back(home, '← Home')));
+async function scores() {
+  screen('scores', header('🏆 High scores'), h('p', { class: 'sub' }, 'Loading scores…'), nav(back(home, '← Home')));
   try {
-    const data = await api('/api/public/scores');
-    const rooms = [...new Set(data.scores.map((s) => s.room).filter(Boolean))];
-    const rows = data.scores.filter((s) => !roomFilter || s.room === roomFilter).slice(0, 10);
-    body.replaceChildren(
-      rooms.length > 1 ? h('div', { class: 'tabs' },
-        h('button', { class: roomFilter ? '' : 'on', onclick: () => scores('') }, 'All rooms'),
-        ...rooms.map((r) => h('button', { class: roomFilter === r ? 'on' : '', onclick: () => scores(r) }, r))) : '',
-      rows.length ? h('table', { class: 'scores' },
-        h('thead', {}, h('tr', {}, h('th', {}, '#'), h('th', {}, 'Team'), h('th', {}, 'Time'), h('th', {}, 'Room'), h('th', {}, 'Players'))),
-        h('tbody', {}, rows.map((s, i) => h('tr', {}, h('td', {}, i + 1), h('td', {}, s.team), h('td', { class: 'time' }, fmtSeconds(s.seconds)), h('td', {}, s.room), h('td', {}, s.players ?? ''))))) : h('p', { class: 'sub' }, 'No scores yet - be the first!'),
-      data.demo ? h('p', { class: 'note' }, 'Demo data (ERCC API not configured).') : '',
-    );
+    drawScores((await api('/api/public/scores')).scores, 0, 0);
   } catch (e) {
-    body.replaceChildren(h('p', { class: 'error' }, e.message));
+    screen('scores', header('🏆 High scores'), h('p', { class: 'error' }, e.message), nav(back(home, '← Home')));
   }
+}
+
+function drawScores(all, roomId, diffId) {
+  const room = cfg.rooms.find((r) => r.id === roomId);
+  const rows = all.filter((s) => (!roomId || s.room_id === roomId) && (!diffId || s.difficulty_id === diffId)).slice(0, 10);
+  const tab = (label, on, fn) => h('button', { class: on ? 'on' : '', onclick: fn }, label);
+  const cols = ['#', 'Team', 'Time', !roomId && 'Room', !diffId && 'Level', 'Players'].filter(Boolean);
+  screen('scores', header('🏆 High scores'),
+    cfg.rooms.length > 1 ? h('div', { class: 'tabs' }, tab('All rooms', !roomId, () => drawScores(all, 0, 0)),
+      ...cfg.rooms.map((r) => tab(r.name, roomId === r.id, () => drawScores(all, r.id, 0)))) : '',
+    room && room.difficulties.length > 1 ? h('div', { class: 'tabs' }, tab('All levels', !diffId, () => drawScores(all, roomId, 0)),
+      ...room.difficulties.map((d) => tab(d.name, diffId === d.id, () => drawScores(all, roomId, d.id)))) : '',
+    rows.length ? h('table', { class: 'scores' }, h('thead', {}, h('tr', {}, cols.map((c) => h('th', {}, c)))),
+      h('tbody', {}, rows.map((s, i) => h('tr', {}, h('td', {}, i + 1), h('td', {}, s.team), h('td', { class: 'time' }, fmtSeconds(s.seconds)),
+        !roomId ? h('td', {}, s.room) : '', !diffId ? h('td', {}, s.difficulty) : '', h('td', {}, s.players ?? ''))))) : h('p', { class: 'sub' }, 'No scores yet - be the first!'),
+    nav(back(home, '← Home')));
 }
 
 // ---------- sign in ----------

@@ -4,7 +4,6 @@ import {
   HttpError, createBooking, checkIn, describe, getBooking, getBookingByCode, listBookings, localNow, phoneDigits, slotsFor,
 } from '../bookings.js';
 import { notifyStaff } from '../notify.js';
-import { getHighScores } from '../ercc.js';
 import { rateLimit } from '../auth.js';
 
 const r = Router();
@@ -63,11 +62,14 @@ r.post('/checkin', rateLimit(12, 60_000), (req, res) => {
   res.json({ name: done.name.split(/\s+/)[0], room_name: done.room_name, start: done.start });
 });
 
+// Fastest first. Only rooms/difficulties that are still active appear on the kiosk.
 r.get('/scores', (_req, res) => {
-  getHighScores().then(
-    (data) => res.json(data),
-    () => res.status(502).json({ error: 'High scores are unavailable right now.' }),
-  );
+  const scores = db.prepare(
+    `SELECT s.team, s.seconds, s.players, s.played_on date, s.room_id, s.difficulty_id, r.name room, d.name difficulty
+     FROM scores s JOIN rooms r ON r.id = s.room_id JOIN difficulties d ON d.id = s.difficulty_id
+     WHERE r.active = 1 AND d.active = 1 ORDER BY s.seconds ASC, s.id ASC LIMIT 1000`,
+  ).all();
+  res.json({ scores });
 });
 
 export default r;

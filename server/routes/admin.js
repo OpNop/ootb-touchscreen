@@ -7,7 +7,6 @@ import {
   endSession, hashPassword, newTopic, rateLimit, requireAdmin, requireAuth, startSession, verifyPassword,
 } from '../auth.js';
 import { alerts, deliver, twilioConfigured, notifyStaff } from '../notify.js';
-import { erccConfigured } from '../ercc.js';
 
 const r = Router();
 const bool = (v) => (v ? 1 : 0);
@@ -108,15 +107,15 @@ function diffFields(b) {
   if (!str(b.name)) throw new HttpError(400, 'Difficulty name is required.');
   const min = n(b.min_players, 1, 50, 'Min players');
   const max = n(b.max_players, min, 50, 'Max players');
-  return [str(b.name, 60), n(b.duration_min, 5, 600, 'Duration'), n(b.buffer_min, 0, 240, 'Reset time'), min, max, bool(b.active ?? true), str(b.ercc_ref, 100)];
+  return [str(b.name, 60), n(b.duration_min, 5, 600, 'Duration'), n(b.buffer_min, 0, 240, 'Reset time'), min, max, bool(b.active ?? true)];
 }
 r.post('/rooms/:id/difficulties', (req, res) => {
-  const id = db.prepare('INSERT INTO difficulties (room_id, name, duration_min, buffer_min, min_players, max_players, active, ercc_ref) VALUES (?,?,?,?,?,?,?,?)')
+  const id = db.prepare('INSERT INTO difficulties (room_id, name, duration_min, buffer_min, min_players, max_players, active) VALUES (?,?,?,?,?,?,?)')
     .run(+req.params.id, ...diffFields(req.body || {})).lastInsertRowid;
   res.status(201).json({ id: Number(id) });
 });
 r.put('/difficulties/:id', (req, res) => {
-  db.prepare('UPDATE difficulties SET name=?, duration_min=?, buffer_min=?, min_players=?, max_players=?, active=?, ercc_ref=? WHERE id=?')
+  db.prepare('UPDATE difficulties SET name=?, duration_min=?, buffer_min=?, min_players=?, max_players=?, active=? WHERE id=?')
     .run(...diffFields(req.body || {}), +req.params.id);
   res.json({ ok: true });
 });
@@ -147,6 +146,7 @@ r.delete('/rooms/:id', (req, res) => {
   const id = +req.params.id;
   if (!db.prepare('SELECT 1 FROM rooms WHERE id = ?').get(id)) throw new HttpError(404, 'Room not found.');
   deleteWithBookings(res, 'room_id', id, req.query.force === '1', () => {
+    db.prepare('DELETE FROM scores WHERE room_id = ?').run(id);
     db.prepare('DELETE FROM difficulties WHERE room_id = ?').run(id);
     db.prepare('DELETE FROM rooms WHERE id = ?').run(id);
   });
@@ -155,8 +155,47 @@ r.delete('/difficulties/:id', (req, res) => {
   const id = +req.params.id;
   if (!db.prepare('SELECT 1 FROM difficulties WHERE id = ?').get(id)) throw new HttpError(404, 'Difficulty not found.');
   deleteWithBookings(res, 'difficulty_id', id, req.query.force === '1', () => {
+    db.prepare('DELETE FROM scores WHERE difficulty_id = ?').run(id);
     db.prepare('DELETE FROM difficulties WHERE id = ?').run(id);
   });
+});
+
+// ---- high scores (entered manually) ----
+const SCORE_SELECT = `SELECT s.id, s.room_id, s.difficulty_id, s.team, s.seconds, s.players, s.played_on, r.name room_name, d.name difficulty_name
+  FROM scores s JOIN rooms r ON r.id = s.room_id JOIN difficulties d ON d.id = s.difficulty_id`;
+
+function scoreFields(b) {
+  const diff = db.prepare('SELECT id, room_id FROM difficulties WHERE id = ?').get(+b.difficulty_id);
+  if (!diff) throw new HttpError(400, 'Please choose a room and difficulty.');
+  const team = str(b.team, 80);
+  if (!team) throw new HttpError(400, 'Team name is required.');
+  const seconds = parseInt(b.seconds, 10);
+  if (!(seconds >= 1 && seconds <= 86400)) throw new HttpError(400, 'Enter a valid escape time (for example 45:30).');
+  const players = b.players === '' || b.players == null ? null : parseInt(b.players, 10);
+  if (players !== null && !(players >= 1 && players <= 50)) throw new HttpError(400, 'Players must be between 1 and 50.');
+  const playedOn = str(b.played_on) || localNow().date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(playedOn)) throw new HttpError(400, 'Invalid date.');
+  return [diff.room_id, diff.id, team, seconds, players, playedOn];
+}
+
+r.get('/scores', (_req, res) => {
+  res.json(db.prepare(`${SCORE_SELECT} ORDER BY s.played_on DESC, s.id DESC LIMIT 1000`).all());
+});
+r.post('/scores', (req, res) => {
+  const id = db.prepare('INSERT INTO scores (room_id, difficulty_id, team, seconds, players, played_on, created_by) VALUES (?,?,?,?,?,?,?)')
+    .run(...scoreFields(req.body || {}), req.staff.id).lastInsertRowid;
+  res.status(201).json(db.prepare(`${SCORE_SELECT} WHERE s.id = ?`).get(id));
+});
+r.put('/scores/:id', (req, res) => {
+  const info = db.prepare('UPDATE scores SET room_id=?, difficulty_id=?, team=?, seconds=?, players=?, played_on=? WHERE id=?')
+    .run(...scoreFields(req.body || {}), +req.params.id);
+  if (!info.changes) throw new HttpError(404, 'Score not found.');
+  res.json({ ok: true });
+});
+r.delete('/scores/:id', (req, res) => {
+  const info = db.prepare('DELETE FROM scores WHERE id = ?').run(+req.params.id);
+  if (!info.changes) throw new HttpError(404, 'Score not found.');
+  res.json({ ok: true });
 });
 
 // ---- staff ----
@@ -202,7 +241,7 @@ r.post('/staff/:id/test', (req, res, next) => {
 r.get('/settings', (_req, res) => {
   res.json({
     settings: getSettings(),
-    status: { twilio: twilioConfigured(), ercc: erccConfigured(), ntfy_server: process.env.NTFY_SERVER || 'https://ntfy.sh', timezone: process.env.TIMEZONE || 'America/New_York' },
+    status: { twilio: twilioConfigured(), ntfy_server: process.env.NTFY_SERVER || 'https://ntfy.sh', timezone: process.env.TIMEZONE || 'America/New_York' },
   });
 });
 r.put('/settings', (req, res) => {

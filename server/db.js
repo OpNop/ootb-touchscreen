@@ -29,9 +29,22 @@ CREATE TABLE IF NOT EXISTS difficulties (
   buffer_min INTEGER NOT NULL DEFAULT 15,   -- reset time after the game
   min_players INTEGER NOT NULL DEFAULT 2,
   max_players INTEGER NOT NULL DEFAULT 8,
-  active INTEGER NOT NULL DEFAULT 1,
-  ercc_ref TEXT NOT NULL DEFAULT ''         -- optional name/id used to match ERCC high scores
+  active INTEGER NOT NULL DEFAULT 1
 );
+
+-- High scores are entered manually by admins (there is no scoreboard API to pull from).
+CREATE TABLE IF NOT EXISTS scores (
+  id INTEGER PRIMARY KEY,
+  room_id INTEGER NOT NULL REFERENCES rooms(id),
+  difficulty_id INTEGER NOT NULL REFERENCES difficulties(id),
+  team TEXT NOT NULL,
+  seconds INTEGER NOT NULL,         -- escape time; lower is better
+  players INTEGER,
+  played_on TEXT NOT NULL,          -- local YYYY-MM-DD
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_by INTEGER
+);
+CREATE INDEX IF NOT EXISTS scores_difficulty ON scores(difficulty_id, seconds);
 
 CREATE TABLE IF NOT EXISTS bookings (
   id INTEGER PRIMARY KEY,
@@ -90,6 +103,11 @@ CREATE TABLE IF NOT EXISTS notifications (
 // Migration: rooms.description is now the full (Markdown) text; short_description is the kiosk card blurb.
 if (!db.prepare('PRAGMA table_info(rooms)').all().some((c) => c.name === 'short_description')) {
   db.exec("ALTER TABLE rooms ADD COLUMN short_description TEXT NOT NULL DEFAULT ''");
+}
+
+// Migration: the ERCC high score integration was removed, so drop its leftover column.
+if (db.prepare('PRAGMA table_info(difficulties)').all().some((c) => c.name === 'ercc_ref')) {
+  db.exec('ALTER TABLE difficulties DROP COLUMN ercc_ref');
 }
 
 const DEFAULT_SETTINGS = {

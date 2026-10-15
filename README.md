@@ -17,7 +17,7 @@ npm start
 |---|---|
 | Kiosk sign-in | Tap name from today's list → last 4 digits of booking phone, or enter the 6-char confirmation code. Names shown as "First L." |
 | Kiosk sign-up | Room → difficulty → day → time → players → details (on-screen keyboard) → confirm. Returns a confirmation code. |
-| High scores | `/api/public/scores` proxies the ERCC API (cached 60s, stale fallback). Demo data until configured. |
+| High scores | Entered manually by admins under **High scores** (room/difficulty, team, time as `mm:ss`, players, date; "Save & add another" for batch entry). The kiosk leaderboard shows the fastest 10, filterable by room and difficulty. Deleting a room/difficulty also deletes its scores. |
 | Staff schedule | Calendar (rooms as columns for a day, days as columns for a week) or list view, toggled in the toolbar; click an empty slot to book, click a booking to edit. Create/edit/cancel, check in, complete, no-show. Prevents double-booking per room (any difficulty). |
 | Rooms | Add rooms and difficulties in the UI (length, reset buffer, player limits, per-weekday hours). Each room has a short description (shown on the kiosk room card) and a full Markdown description (shown in the "More info" pop-up) with a live preview. Markdown supported: `**bold**`, `*italic*`, `## headings`, `- bullets`, `1. numbered`, `---`. Rooms and difficulties can be deleted from their edit dialogs; if bookings exist you're warned with the count and must confirm that they're deleted too (unticking Active instead hides a room but keeps its history). Seeded once with 2 rooms x 2 difficulties. |
 | Staff & alerts | Add/remove staff (untick Active = logged out + no more alerts). Roles: `admin` (everything) and `staff` (bookings). |
@@ -33,10 +33,6 @@ Configured per person in **Staff & alerts**, plus optional shared channels in **
 4. **Browser notifications (admin page):** click **🔕 Alerts off** in the admin header and allow notifications. While the admin page is open (even in a background tab) a pop-up and beep fire on each sign-up/check-in, and the schedule refreshes itself. It's a per-browser setting and needs HTTPS or `localhost`; it does not work once the tab is closed (use ntfy/SMS for that).
 
 Delivery results (and failures) are listed under **Alert log**. Notifications never delay or break a booking.
-
-## ERCC high scores — to finish
-
-The ERCC wiki doesn't document the endpoint; the docs are served by your own ERCC install (Settings → enable API → *Open API Documentation*). Set `ERCC_BASE_URL`, `ERCC_SCORES_PATH` and the optional auth header in `.env`, then adjust `normalize()` in `server/ercc.js` to the real field names if they differ.
 
 ## Deployment notes
 

@@ -1,4 +1,4 @@
-import { h, api, fmtTime, fmtDate, addDays } from '/shared/ui.js';
+import { h, api, fmtTime, fmtDate, addDays, fmtSeconds } from '/shared/ui.js';
 import { renderMarkdown, plainText } from '/shared/markdown.js';
 
 const root = document.getElementById('root');
@@ -95,7 +95,7 @@ function renderLogin() {
 }
 
 // ---------- shell ----------
-const TABS = [['schedule', 'Schedule'], ['rooms', 'Rooms', true], ['staff', 'Staff & alerts', true], ['settings', 'Settings', true], ['activity', 'Alert log', true]];
+const TABS = [['schedule', 'Schedule'], ['rooms', 'Rooms', true], ['scores', 'High scores', true], ['staff', 'Staff & alerts', true], ['settings', 'Settings', true], ['activity', 'Alert log', true]];
 function renderShell() {
   const main = h('main');
   const nav = h('nav', {}, TABS.filter(([, , adminOnly]) => !adminOnly || me.role === 'admin').map(([id, label]) =>
@@ -105,7 +105,7 @@ function renderShell() {
       h('button', { class: 'btn sm' + (alertsActive() ? ' primary' : ''), title: 'Browser notifications for kiosk sign-ups and check-ins', onclick: toggleAlerts }, alertsActive() ? '🔔 Alerts on' : '🔕 Alerts off'),
       h('span', { class: 'muted' }, me.name), h('button', { class: 'btn sm', onclick: async () => { await api('/api/admin/logout', { method: 'POST' }); start(); } }, 'Sign out')),
     main);
-  ({ schedule: renderSchedule, rooms: renderRooms, staff: renderStaff, settings: renderSettings, activity: renderActivity })[tab](main);
+  ({ schedule: renderSchedule, rooms: renderRooms, scores: renderScores, staff: renderStaff, settings: renderSettings, activity: renderActivity })[tab](main);
 }
 
 // ---------- schedule ----------
@@ -308,9 +308,9 @@ async function renderRooms(main) {
     ...rooms.map((r) => h('div', { class: 'card' },
       h('div', { class: 'row sp' }, h('div', {}, h('b', {}, r.name), r.active ? '' : h('span', { class: 'badge' }, 'inactive'), h('div', { class: 'muted' }, hoursSummary(r.hours)), h('div', { class: 'muted' }, r.short_description || plainText(r.description, 120) || 'No description yet')),
         h('button', { class: 'btn sm', onclick: () => roomForm(r) }, 'Edit room & hours')),
-      h('table', {}, h('thead', {}, h('tr', {}, ['Difficulty', 'Length', 'Reset', 'Players', 'ERCC match', ''].map((t) => h('th', {}, t)))),
+      h('table', {}, h('thead', {}, h('tr', {}, ['Difficulty', 'Length', 'Reset', 'Players', ''].map((t) => h('th', {}, t)))),
         h('tbody', {}, r.difficulties.map((d) => h('tr', {}, h('td', {}, d.name, d.active ? '' : h('span', { class: 'badge' }, 'inactive')), h('td', {}, `${d.duration_min} min`), h('td', {}, `${d.buffer_min} min`),
-          h('td', {}, `${d.min_players}-${d.max_players}`), h('td', { class: 'muted' }, d.ercc_ref || '—'), h('td', {}, h('button', { class: 'btn sm', onclick: () => diffForm(r, d) }, 'Edit')))))),
+          h('td', {}, `${d.min_players}-${d.max_players}`), h('td', {}, h('button', { class: 'btn sm', onclick: () => diffForm(r, d) }, 'Edit')))))),
       h('div', { style: 'margin-top:10px' }, h('button', { class: 'btn sm', onclick: () => diffForm(r, null) }, '+ Add difficulty')))));
 }
 const hoursSummary = (hours) => DAYS.map((d, i) => (hours[i] ? `${d.slice(0, 3)} ${fmtTime(hours[i][0])}–${fmtTime(hours[i][1])}` : null)).filter(Boolean).join(' · ') || 'Closed';
@@ -356,19 +356,81 @@ function diffForm(room, d) {
     const buf = num(d?.buffer_min ?? 15, { min: 0 });
     const min = num(d?.min_players ?? 2, { min: 1 });
     const max = num(d?.max_players ?? 8, { min: 1 });
-    const ref = h('input', { value: d?.ercc_ref || '', placeholder: 'Room name/id as it appears in ERCC' });
     const active = check('Active (bookable)', d ? !!d.active : true);
     const err = h('div', { class: 'err' });
     const save = () => attempt(err, async () => {
-      const body = { name: name.value, duration_min: dur.value, buffer_min: buf.value, min_players: min.value, max_players: max.value, ercc_ref: ref.value, active: active.input.checked };
+      const body = { name: name.value, duration_min: dur.value, buffer_min: buf.value, min_players: min.value, max_players: max.value, active: active.input.checked };
       await (d ? api(`/api/admin/difficulties/${d.id}`, { method: 'PUT', body }) : api(`/api/admin/rooms/${room.id}/difficulties`, { method: 'POST', body }));
       close(); renderShell();
     });
     return h('div', {}, field('Name (e.g. Standard, Expert)', name),
       h('div', { class: 'cols' }, field('Game length (min)', dur), field('Reset time after (min)', buf), field('Min players', min), field('Max players', max)),
-      field('ERCC room match (optional)', ref), active, err,
+      active, err,
       h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: save }, 'Save'), h('button', { class: 'btn', onclick: close }, 'Close'),
         d ? h('button', { class: 'btn danger', style: 'margin-left:auto', onclick: () => attempt(err, async () => { if (await confirmDelete(`/api/admin/difficulties/${d.id}`, `the difficulty "${d.name}" (${room.name})`)) { close(); renderShell(); } }) }, 'Delete difficulty') : ''));
+  });
+}
+
+// ---------- high scores ----------
+/** "45:30" or "1:02:15" -> seconds (null if invalid). */
+function parseTime(text) {
+  const m = /^\s*(\d+):([0-5]?\d)(?::([0-5]?\d))?\s*$/.exec(text);
+  if (!m) return null;
+  return m[3] === undefined ? +m[1] * 60 + +m[2] : +m[1] * 3600 + +m[2] * 60 + +m[3];
+}
+
+async function renderScores(main) {
+  const [scores, rooms] = await Promise.all([api('/api/admin/scores'), api('/api/admin/rooms')]);
+  const options = rooms.flatMap((r) => r.difficulties.map((d) => ({ id: d.id, room: r.name, label: `${r.name} — ${d.name}` })));
+  const filter = h('select', { onchange: () => draw() }, h('option', { value: '' }, 'All rooms & difficulties'), options.map((o) => h('option', { value: o.id }, o.label)));
+  const table = h('div');
+  const draw = () => {
+    const rows = scores.filter((s) => !filter.value || s.difficulty_id === +filter.value).sort((a, b) => a.seconds - b.seconds);
+    table.replaceChildren(rows.length ? h('div', { class: 'card', style: 'padding:0;overflow-x:auto' }, h('table', {},
+      h('thead', {}, h('tr', {}, ['Rank', 'Team', 'Time', 'Room', 'Players', 'Date', ''].map((t) => h('th', {}, t)))),
+      h('tbody', {}, rows.map((s, i) => h('tr', {}, h('td', {}, i + 1), h('td', {}, s.team), h('td', {}, h('b', {}, fmtSeconds(s.seconds))),
+        h('td', {}, s.room_name, h('div', { class: 'muted' }, s.difficulty_name)), h('td', {}, s.players ?? ''), h('td', {}, s.played_on),
+        h('td', {}, h('button', { class: 'btn sm', onclick: () => scoreForm(s, options) }, 'Edit'))))))) : h('p', { class: 'muted' }, 'No scores yet. Add the first one!'));
+  };
+  main.append(h('div', { class: 'row sp' }, h('h2', {}, 'High scores'), h('button', { class: 'btn primary', onclick: () => scoreForm(null, options) }, '+ Add score')),
+    h('p', { class: 'muted' }, 'Scores shown on the kiosk leaderboard are entered here. Rank is fastest time first within the selected room/difficulty.'),
+    h('div', { style: 'margin-bottom:12px' }, filter), table);
+  draw();
+}
+
+function scoreForm(s, options) {
+  if (!options.length) { alert('Add a room and difficulty first.'); return; }
+  modal(s ? 'Edit score' : 'Add score', (close) => {
+    const diff = h('select', {}, options.map((o) => h('option', { value: o.id, selected: s?.difficulty_id === o.id }, o.label)));
+    const team = h('input', { value: s?.team || '', maxlength: 80, placeholder: 'Team name' });
+    const time = h('input', { value: s ? fmtSeconds(s.seconds) : '', placeholder: 'mm:ss  e.g. 45:30', inputmode: 'numeric' });
+    const players = num(s?.players ?? '', { min: 1, max: 50 });
+    const date = h('input', { type: 'date', value: s?.played_on || me.today });
+    const err = h('div', { class: 'err' });
+    const ok = h('div', { class: 'good' });
+    const save = (another) => attempt(err, async () => {
+      ok.textContent = '';
+      const seconds = parseTime(time.value);
+      if (seconds === null) throw new Error('Enter the escape time as minutes:seconds, for example 45:30.');
+      const body = { difficulty_id: +diff.value, team: team.value, seconds, players: players.value, played_on: date.value };
+      await (s ? api(`/api/admin/scores/${s.id}`, { method: 'PUT', body }) : api('/api/admin/scores', { method: 'POST', body }));
+      if (another) { // keep room/difficulty/date for quick batch entry
+        ok.textContent = `Added "${team.value}" ✓`;
+        team.value = time.value = players.value = '';
+        team.focus();
+        renderShell();
+      } else { close(); renderShell(); }
+    });
+    return h('div', {},
+      field('Room & difficulty', diff), field('Team name', team),
+      h('div', { class: 'cols' }, field('Escape time (mm:ss)', time), field('Players (optional)', players), field('Date', date)),
+      err, ok,
+      h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => save(false) }, 'Save'),
+        s ? '' : h('button', { class: 'btn', onclick: () => save(true) }, 'Save & add another'), h('button', { class: 'btn', onclick: close }, 'Close'),
+        s ? h('button', { class: 'btn danger', style: 'margin-left:auto', onclick: () => attempt(err, async () => {
+          if (!confirm(`Delete the score for "${s.team}"?`)) return;
+          await api(`/api/admin/scores/${s.id}`, { method: 'DELETE' }); close(); renderShell();
+        }) }, 'Delete') : ''));
   });
 }
 
@@ -431,7 +493,6 @@ async function renderSettings(main) {
     field('Webhook URL', inputs.shared_webhook_url), field('Shared ntfy topic', inputs.shared_ntfy_topic), err,
     h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => attempt(err, async () => { await api('/api/admin/settings', { method: 'PUT', body: Object.fromEntries(Object.entries(inputs).map(([k, el]) => [k, el.value])) }); msg.textContent = 'Saved ✓'; }) }, 'Save settings'), msg)),
     h('div', { class: 'card' }, h('h3', { style: 'margin-top:0' }, 'Integration status (set in .env on the server)'),
-      h('div', {}, 'ERCC high score API: ', status.ercc ? h('span', { class: 'good' }, 'configured') : h('b', {}, 'not configured - kiosk shows demo scores')),
       h('div', {}, 'Twilio SMS: ', status.twilio ? h('span', { class: 'good' }, 'configured') : h('b', {}, 'not configured')),
       h('div', {}, `ntfy server: ${status.ntfy_server} · Timezone: ${status.timezone}`)));
 }
