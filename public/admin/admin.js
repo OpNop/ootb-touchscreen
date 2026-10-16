@@ -29,15 +29,45 @@ async function attempt(errEl, fn) {
 }
 
 // ---------- browser notifications ----------
-// Per-browser opt-in (permission must be granted from a click). Works while the admin page is open, including background tabs.
-// Browsers only allow notifications on HTTPS or localhost.
+// Per-browser opt-in (permission must be granted from a click). Two layers:
+//  - SSE stream + Notification API: instant pop-up + beep + schedule refresh while the admin page is open (even in a background tab).
+//  - Web Push via the service worker (sw.js): pop-ups when the page is closed.
+// Browsers only allow notifications and service workers on HTTPS or localhost.
 let events = null;
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window;
+
+function keyToBytes(b64url) {
+  const raw = atob((b64url + '='.repeat((4 - (b64url.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
+/** Registers the service worker, subscribes this browser to push, and tells the server (idempotent; safe to call on every load). */
+async function enablePush() {
+  if (!pushSupported()) throw new Error('This browser does not support background push.');
+  await navigator.serviceWorker.register('/admin/sw.js', { scope: '/admin/' });
+  const reg = await navigator.serviceWorker.ready;
+  const { key } = await api('/api/admin/push/key');
+  const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyToBytes(key) }));
+  await api('/api/admin/push/subscribe', { method: 'POST', body: sub.toJSON() });
+}
+
+/** Stops the server pushing to this browser. `keepBrowserSubscription` is used on sign-out so the next login can just re-register it. */
+async function disablePush(keepBrowserSubscription = false) {
+  if (!pushSupported()) return;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration('/admin/');
+    const sub = await reg?.pushManager.getSubscription();
+    if (!sub) return;
+    await api('/api/admin/push/unsubscribe', { method: 'POST', body: { endpoint: sub.endpoint } }).catch(() => {});
+    if (!keepBrowserSubscription) await sub.unsubscribe();
+  } catch { /* nothing to clean up */ }
+}
 const alertsOn = () => { try { return localStorage.getItem('browserAlerts') === '1'; } catch { return false; } };
 const setAlertsPref = (on) => { try { localStorage.setItem('browserAlerts', on ? '1' : '0'); } catch { /* ignore */ } };
 const alertsActive = () => 'Notification' in window && Notification.permission === 'granted' && alertsOn();
 
 async function toggleAlerts() {
-  if (alertsActive()) { setAlertsPref(false); renderShell(); return; }
+  if (alertsActive()) { setAlertsPref(false); await disablePush(); renderShell(); return; }
   if (!('Notification' in window) || !window.isSecureContext) {
     alert('Browser notifications need HTTPS (or localhost). Open the admin over https:// to enable them.');
     return;
@@ -48,7 +78,9 @@ async function toggleAlerts() {
     return;
   }
   setAlertsPref(true);
-  new Notification('Alerts enabled', { body: 'You will be notified of kiosk sign-ups and check-ins while this page is open.' });
+  let body = 'You will be notified of kiosk sign-ups and check-ins, even when this page is closed.';
+  try { await enablePush(); } catch (e) { body = `Alerts will show while this page is open. Background alerts could not be set up: ${e.message}`; }
+  new Notification('Alerts enabled', { body });
   renderShell();
 }
 
@@ -65,7 +97,7 @@ function beep() {
 
 function onAlert(a) {
   if (alertsActive()) {
-    const n = new Notification(a.title, { body: a.message, tag: `ootb-${a.id}` });
+    const n = new Notification(a.title, { body: a.message, tag: `ootb-${a.at}` });
     n.onclick = () => { window.focus(); tab = 'schedule'; renderShell(); n.close(); };
     beep();
   }
@@ -103,7 +135,7 @@ function renderShell() {
   root.replaceChildren(
     h('header', { class: 'bar' }, h('span', { class: 'title' }, 'Staff Admin'), nav, h('span', { class: 'sp' }),
       h('button', { class: 'btn sm' + (alertsActive() ? ' primary' : ''), title: 'Browser notifications for kiosk sign-ups and check-ins', onclick: toggleAlerts }, alertsActive() ? '🔔 Alerts on' : '🔕 Alerts off'),
-      h('span', { class: 'muted' }, me.name), h('button', { class: 'btn sm', onclick: async () => { await api('/api/admin/logout', { method: 'POST' }); start(); } }, 'Sign out')),
+      h('span', { class: 'muted' }, me.name), h('button', { class: 'btn sm', onclick: async () => { await disablePush(true); await api('/api/admin/logout', { method: 'POST' }); start(); } }, 'Sign out')),
     main);
   ({ schedule: renderSchedule, rooms: renderRooms, scores: renderScores, staff: renderStaff, settings: renderSettings, activity: renderActivity })[tab](main);
 }
@@ -512,6 +544,7 @@ async function start() {
     me = await api('/api/admin/me');
     if (me.role !== 'admin' && tab !== 'schedule') tab = 'schedule';
     connectEvents();
+    if (alertsActive()) enablePush().catch(() => {}); // re-attach this browser's push subscription to whoever just signed in
     renderShell();
   } catch { renderLogin(); }
 }

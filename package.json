@@ -10,7 +10,8 @@
     "create-admin": "node server/create-admin.js"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "web-push": "^3.6.7"
   },
   "engines": {
     "node": ">=22.5"

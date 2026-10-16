@@ -30,7 +30,7 @@ Configured per person in **Staff & alerts**, plus optional shared channels in **
 2. **Shared channel:** one Slack/Discord webhook URL and/or one shared ntfy topic in Settings — the whole team just joins the channel.
 3. **SMS via Twilio:** fill `TWILIO_*` in `.env`, then tick "Text message" and enter a mobile number per person (costs per message).
 
-4. **Browser notifications (admin page):** click **🔕 Alerts off** in the admin header and allow notifications. While the admin page is open (even in a background tab) a pop-up and beep fire on each sign-up/check-in, and the schedule refreshes itself. It's a per-browser setting and needs HTTPS or `localhost`; it does not work once the tab is closed (use ntfy/SMS for that).
+4. **Browser notifications (admin page):** click **🔕 Alerts off** in the admin header and allow notifications. While the admin page is open (even in a background tab) a pop-up and beep fire on each sign-up/check-in, and the schedule refreshes itself. A service worker (`public/admin/sw.js`) plus Web Push also delivers the pop-up **when the page is closed**, as long as the browser is running. It's a per-browser opt-in and needs HTTPS or `localhost` (browsers refuse service workers on plain `http://`). Signing out stops pushes to that browser until the next sign-in; deactivating a staff member removes their subscriptions. The VAPID keys that identify the server are generated automatically and stored in the database, so don't delete `data/app.db` without expecting staff to re-enable alerts.
 
 Delivery results (and failures) are listed under **Alert log**. Notifications never delay or break a booking.
 

@@ -6,7 +6,7 @@ import {
 import {
   endSession, hashPassword, newTopic, rateLimit, requireAdmin, requireAuth, startSession, verifyPassword,
 } from '../auth.js';
-import { alerts, deliver, twilioConfigured, notifyStaff } from '../notify.js';
+import { alerts, deliver, isAllowedPushEndpoint, notifyStaff, twilioConfigured, vapidPublicKey } from '../notify.js';
 
 const r = Router();
 const bool = (v) => (v ? 1 : 0);
@@ -28,6 +28,25 @@ r.post('/logout', (req, res) => {
 r.use(requireAuth);
 
 r.get('/me', (req, res) => res.json({ ...req.staff, today: localNow().date }));
+
+// ---- browser push (service worker) ----
+r.get('/push/key', (_req, res) => res.json({ key: vapidPublicKey() }));
+r.post('/push/subscribe', (req, res) => {
+  const { endpoint, keys } = req.body || {};
+  if (!isAllowedPushEndpoint(endpoint) || typeof keys?.p256dh !== 'string' || typeof keys?.auth !== 'string') {
+    throw new HttpError(400, 'Invalid push subscription.');
+  }
+  // Upsert by endpoint: signing in as someone else on the same browser takes the subscription over.
+  db.prepare(
+    `INSERT INTO push_subscriptions (endpoint, staff_id, p256dh, auth) VALUES (?,?,?,?)
+     ON CONFLICT(endpoint) DO UPDATE SET staff_id = excluded.staff_id, p256dh = excluded.p256dh, auth = excluded.auth`,
+  ).run(endpoint, req.staff.id, keys.p256dh, keys.auth);
+  res.json({ ok: true });
+});
+r.post('/push/unsubscribe', (req, res) => {
+  db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ? AND staff_id = ?').run(str(req.body?.endpoint, 2000), req.staff.id);
+  res.json({ ok: true });
+});
 
 // ---- bookings ----
 r.get('/bookings', (req, res) => {
@@ -227,7 +246,10 @@ r.put('/staff/:id', (req, res) => {
     str(b.name, 80) || cur.name, str(b.email).toLowerCase() || cur.email, role, str(b.phone, 30), bool(b.notify_sms), bool(b.notify_push), active,
     b.password ? hashPassword(String(b.password)) : cur.password_hash, id,
   );
-  if (!active) db.prepare('DELETE FROM sessions WHERE staff_id = ?').run(id); // removed staff are logged out immediately
+  if (!active) { // removed staff are logged out immediately and stop receiving browser pushes
+    db.prepare('DELETE FROM sessions WHERE staff_id = ?').run(id);
+    db.prepare('DELETE FROM push_subscriptions WHERE staff_id = ?').run(id);
+  }
   res.json({ ok: true });
 });
 r.post('/staff/:id/test', (req, res, next) => {
@@ -239,8 +261,9 @@ r.post('/staff/:id/test', (req, res, next) => {
 
 // ---- settings / status / log ----
 r.get('/settings', (_req, res) => {
+  const all = getSettings();
   res.json({
-    settings: getSettings(),
+    settings: Object.fromEntries(SETTING_KEYS.map((k) => [k, all[k]])), // never expose internal rows such as the VAPID private key
     status: { twilio: twilioConfigured(), ntfy_server: process.env.NTFY_SERVER || 'https://ntfy.sh', timezone: process.env.TIMEZONE || 'America/New_York' },
   });
 });
