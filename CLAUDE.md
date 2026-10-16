@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Escape-room venue system: a public touchscreen **kiosk** (check in, book a game, high scores) plus a staff **admin** backend. Node >= 22.5 (uses built-in `node:sqlite`), Express 4, vanilla-JS frontends served as static files. No build step, no bundler, no TypeScript, and **no test or lint tooling**.
+Escape-room venue system: a public touchscreen **kiosk** (check in, book a game, leaderboard) plus a staff **admin** backend. Node >= 22.5 (uses built-in `node:sqlite`), Express 4, vanilla-JS frontends served as static files. No build step, no bundler, no TypeScript, and **no test or lint tooling**.
 
 ## Commands
 
@@ -38,7 +38,7 @@ then drive it with `curl` (staff login sets an `sid` cookie; use `-c/-b`) or the
 
 **Notifications**: `notify.js` `notifyStaff()` does two things for each kiosk sign-up/check-in: emits on an in-process `EventEmitter` (consumed by the SSE endpoint `GET /api/admin/events`, which drives browser Notification API pop-ups and auto-refresh in the admin page) and fans out via `deliver()` to per-staff ntfy topics, Twilio SMS, and shared webhook/ntfy topic from settings. It is fire-and-forget and must never throw into a request handler. Results are logged to the `notifications` table. Browser Web Push is a third layer: `public/admin/sw.js` (scope `/admin/`) receives pushes while the page is closed, subscriptions live in `push_subscriptions` (upserted by endpoint, so a shared browser follows whoever signed in last), and the `web-push` library sends them using VAPID keys auto-generated into the `settings` table (rows outside `SETTING_KEYS`, never returned by `GET /settings`). The same `at` timestamp is the notification `tag` in the page and the worker so one alert never shows twice; the worker stays silent if an admin window is visible. Subscription endpoints are server-fetched URLs, so `isAllowedPushEndpoint` only accepts known push-service hosts (`PUSH_EXTRA_HOSTS` adds test hosts). Push can't be tested in the in-app browser (service workers are blocked there); test the server path against a mock HTTPS push service and the client in a real Chrome over `localhost`/HTTPS.
 
-**High scores**: no external API. Admins enter them manually (`scores` table, `/api/admin/scores`); the kiosk reads `/api/public/scores` (fastest first, only active rooms/difficulties).
+**Leaderboard**: no external API. Admins enter them manually (`scores` table, `/api/admin/scores`); the kiosk reads `/api/public/scores` (fastest first, only active rooms/difficulties).
 
 **Auth (`server/auth.js`)**: scrypt password hashes, random session tokens stored as SHA-256 in `sessions`, `HttpOnly`/`SameSite=Strict` cookie `sid`. `rateLimit()` is a small in-memory limiter used on kiosk bookings/check-in and staff login.
 

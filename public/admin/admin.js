@@ -127,7 +127,7 @@ function renderLogin() {
 }
 
 // ---------- shell ----------
-const TABS = [['schedule', 'Schedule'], ['rooms', 'Rooms', true], ['scores', 'High scores', true], ['staff', 'Staff & alerts', true], ['settings', 'Settings', true], ['activity', 'Alert log', true]];
+const TABS = [['schedule', 'Schedule'], ['rooms', 'Rooms', true], ['scores', 'Leaderboard', true], ['staff', 'Staff & alerts', true], ['settings', 'Settings', true], ['activity', 'Alert log', true]];
 function renderShell() {
   const main = h('main');
   const nav = h('nav', {}, TABS.filter(([, , adminOnly]) => !adminOnly || me.role === 'admin').map(([id, label]) =>
@@ -403,7 +403,7 @@ function diffForm(room, d) {
   });
 }
 
-// ---------- high scores ----------
+// ---------- leaderboard ----------
 /** "45:30" or "1:02:15" -> seconds (null if invalid). */
 function parseTime(text) {
   const m = /^\s*(\d+):([0-5]?\d)(?::([0-5]?\d))?\s*$/.exec(text);
@@ -424,7 +424,7 @@ async function renderScores(main) {
         h('td', {}, s.room_name, h('div', { class: 'muted' }, s.difficulty_name)), h('td', {}, s.players ?? ''), h('td', {}, s.played_on),
         h('td', {}, h('button', { class: 'btn sm', onclick: () => scoreForm(s, options) }, 'Edit'))))))) : h('p', { class: 'muted' }, 'No scores yet. Add the first one!'));
   };
-  main.append(h('div', { class: 'row sp' }, h('h2', {}, 'High scores'), h('button', { class: 'btn primary', onclick: () => scoreForm(null, options) }, '+ Add score')),
+  main.append(h('div', { class: 'row sp' }, h('h2', {}, 'Leaderboard'), h('button', { class: 'btn primary', onclick: () => scoreForm(null, options) }, '+ Add score')),
     h('p', { class: 'muted' }, 'Scores shown on the kiosk leaderboard are entered here. Rank is fastest time first within the selected room/difficulty.'),
     h('div', { style: 'margin-bottom:12px' }, filter), table);
   draw();

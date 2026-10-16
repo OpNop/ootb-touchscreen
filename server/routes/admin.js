@@ -179,7 +179,7 @@ r.delete('/difficulties/:id', (req, res) => {
   });
 });
 
-// ---- high scores (entered manually) ----
+// ---- leaderboard scores (entered manually) ----
 const SCORE_SELECT = `SELECT s.id, s.room_id, s.difficulty_id, s.team, s.seconds, s.players, s.played_on, r.name room_name, d.name difficulty_name
   FROM scores s JOIN rooms r ON r.id = s.room_id JOIN difficulties d ON d.id = s.difficulty_id`;
 

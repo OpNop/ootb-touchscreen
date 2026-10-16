@@ -47,18 +47,18 @@ function renderHome() {
     h('div', { class: 'home' },
       h('button', { onclick: signinList }, h('span', { class: 'icon' }, '🔑'), 'I have a booking', h('small', {}, 'Check in for today')),
       h('button', { onclick: () => signupStart() }, h('span', { class: 'icon' }, '📅'), 'Book a game', h('small', {}, 'Reserve a room')),
-      h('button', { onclick: () => scores() }, h('span', { class: 'icon' }, '🏆'), 'High scores', h('small', {}, 'See the fastest teams')),
+      h('button', { onclick: () => scores() }, h('span', { class: 'icon' }, '🏆'), 'Leaderboard', h('small', {}, 'See the fastest teams')),
     ),
   );
 }
 
-// ---------- high scores ----------
+// ---------- leaderboard ----------
 async function scores() {
-  screen('scores', header('🏆 High scores'), h('p', { class: 'sub' }, 'Loading scores…'), nav(back(home, '← Home')));
+  screen('scores', header('🏆 Leaderboard'), h('p', { class: 'sub' }, 'Loading scores…'), nav(back(home, '← Home')));
   try {
     drawScores((await api('/api/public/scores')).scores, 0, 0);
   } catch (e) {
-    screen('scores', header('🏆 High scores'), h('p', { class: 'error' }, e.message), nav(back(home, '← Home')));
+    screen('scores', header('🏆 Leaderboard'), h('p', { class: 'error' }, e.message), nav(back(home, '← Home')));
   }
 }
 
@@ -67,7 +67,7 @@ function drawScores(all, roomId, diffId) {
   const rows = all.filter((s) => (!roomId || s.room_id === roomId) && (!diffId || s.difficulty_id === diffId)).slice(0, 10);
   const tab = (label, on, fn) => h('button', { class: on ? 'on' : '', onclick: fn }, label);
   const cols = ['#', 'Team', 'Time', !roomId && 'Room', !diffId && 'Level', 'Players'].filter(Boolean);
-  screen('scores', header('🏆 High scores'),
+  screen('scores', header('🏆 Leaderboard'),
     cfg.rooms.length > 1 ? h('div', { class: 'tabs' }, tab('All rooms', !roomId, () => drawScores(all, 0, 0)),
       ...cfg.rooms.map((r) => tab(r.name, roomId === r.id, () => drawScores(all, r.id, 0)))) : '',
     room && room.difficulties.length > 1 ? h('div', { class: 'tabs' }, tab('All levels', !diffId, () => drawScores(all, roomId, 0)),

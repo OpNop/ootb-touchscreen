@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS difficulties (
   active INTEGER NOT NULL DEFAULT 1
 );
 
--- High scores are entered manually by admins (there is no scoreboard API to pull from).
+-- Leaderboard scores are entered manually by admins (there is no scoreboard API to pull from).
 CREATE TABLE IF NOT EXISTS scores (
   id INTEGER PRIMARY KEY,
   room_id INTEGER NOT NULL REFERENCES rooms(id),
@@ -114,7 +114,7 @@ if (!db.prepare('PRAGMA table_info(rooms)').all().some((c) => c.name === 'short_
   db.exec("ALTER TABLE rooms ADD COLUMN short_description TEXT NOT NULL DEFAULT ''");
 }
 
-// Migration: the ERCC high score integration was removed, so drop its leftover column.
+// Migration: the ERCC leaderboard integration was removed, so drop its leftover column.
 if (db.prepare('PRAGMA table_info(difficulties)').all().some((c) => c.name === 'ercc_ref')) {
   db.exec('ALTER TABLE difficulties DROP COLUMN ercc_ref');
 }
